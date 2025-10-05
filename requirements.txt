@@ -1,0 +1,7 @@
+pytubefix
+moviepy
+pillow==9.5.0
+tqdm
+selenium
+streamlit
+slugify
