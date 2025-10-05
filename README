@@ -1,26 +1,33 @@
-# YouTube to TikTok Clips Creator
 
-Automatically download YouTube videos, split them into vertical TikTok-ready clips, add watermarks, and optionally upload them to TikTok.
 
-## Features
+# 🎥 YouTube → TikTok Clips Creator
 
-- 📥 Download YouTube videos in high quality
-- ✂️ Split videos into custom-length clips
-- 📱 Auto-resize to vertical format (1080x1920)
-- 🖼️ Add custom watermark/logo
-- 🎬 Generate thumbnails for each clip
-- 📊 Create summary JSON with metadata
-- 🚀 Optional TikTok auto-upload
-- 🎯 Process specific parts only
+Automatically download YouTube videos, split them into vertical TikTok-ready clips, add watermarks, generate thumbnails, and optionally upload them to TikTok.
 
-## Prerequisites
+---
 
-- Python 3.7+
-- FFmpeg (must be installed and in your PATH)
+## ✨ Features
+
+* 📥 Download YouTube videos in high quality
+* ✂️ Split videos into custom-length clips
+* 📱 Auto-resize to vertical format (1080×1920)
+* 🖼️ Add custom watermark/logo
+* 🎬 Generate thumbnails for each clip
+* 📊 Create summary JSON with metadata
+* 🚀 Optional TikTok auto-upload
+* 🎯 Process specific parts only
+
+---
+
+## 🛠️ Prerequisites
+
+* **Python 3.7+**
+* **FFmpeg** (must be installed and in your PATH)
 
 ### Installing FFmpeg
 
 **Windows:**
+
 ```bash
 # Using Chocolatey
 choco install ffmpeg
@@ -29,35 +36,42 @@ choco install ffmpeg
 ```
 
 **macOS:**
+
 ```bash
 brew install ffmpeg
 ```
 
 **Linux:**
+
 ```bash
 sudo apt update
 sudo apt install ffmpeg
 ```
 
-## Installation
+---
 
-1. Clone or download this repository
+## 📦 Installation
 
+1. Clone or download this repository.
 2. Install required Python packages:
+
 ```bash
 pip install pytubefix moviepy tqdm pillow python-slugify
 ```
 
 3. Create a `config.json` file:
+
 ```json
 {
   "clip_duration": 60
 }
 ```
 
-4. (Optional) Add a `logo.png` file in the same directory for watermarking
+4. (Optional) Add a `logo.png` file in the same directory for watermarking.
 
-## Usage
+---
+
+## 🚀 Usage
 
 ### Basic Usage
 
@@ -84,16 +98,20 @@ python script.py --url "https://www.youtube.com/watch?v=VIDEO_ID" --parts 1 3 5
 python script.py --url "https://www.youtube.com/watch?v=VIDEO_ID" --upload-tiktok
 ```
 
-## Command Line Arguments
+---
 
-| Argument | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `--url` | Yes | - | YouTube video URL |
-| `--clip-duration` | No | From config.json | Length of each clip in seconds |
-| `--parts` | No | All parts | Specific part numbers to process (e.g., `1 2 3`) |
-| `--upload-tiktok` | No | False | Upload clips to TikTok after processing |
+## ⚙️ Command Line Arguments
 
-## Output Structure
+| Argument          | Required | Default          | Description                                      |
+| ----------------- | -------- | ---------------- | ------------------------------------------------ |
+| `--url`           | Yes      | -                | YouTube video URL                                |
+| `--clip-duration` | No       | From config.json | Length of each clip in seconds                   |
+| `--parts`         | No       | All parts        | Specific part numbers to process (e.g., `1 2 3`) |
+| `--upload-tiktok` | No       | False            | Upload clips to TikTok after processing          |
+
+---
+
+## 📁 Output Structure
 
 ```
 video-title_20250105_1430/
@@ -121,9 +139,11 @@ video-title_20250105_1430/
 }
 ```
 
-## Configuration
+---
 
-### config.json
+## ⚙️ Configuration
+
+### `config.json`
 
 ```json
 {
@@ -134,68 +154,70 @@ video-title_20250105_1430/
 }
 ```
 
-### Logo/Watermark
+### Logo / Watermark
 
-Place a `logo.png` file in the same directory as the script. The logo will be:
-- Resized to 120px height (maintaining aspect ratio)
-- Positioned at bottom-right corner
-- Applied to all video clips
+* Place `logo.png` in the same folder as the script.
+* Resized to **120px height**, maintaining aspect ratio
+* Positioned at **bottom-right corner**
+* Applied to all video clips
 
-To disable watermark, simply remove or rename the `logo.png` file.
+> To disable watermark, remove or rename `logo.png`.
 
-## TikTok Upload (Optional)
+---
 
-To enable TikTok uploads, you need to install and configure the `tiktok_upload` module:
+## 📲 TikTok Upload (Optional)
+
+* Install and configure `tiktok_upload`:
 
 ```bash
 pip install tiktok-uploader
 ```
 
-Configure your TikTok credentials according to the `tiktok-uploader` documentation.
+* Follow the module documentation to set up your TikTok credentials.
 
-## Troubleshooting
+---
 
-### "Failed to load video"
-- Ensure FFmpeg is properly installed and in your PATH
-- Check that the downloaded video file is not corrupted
+## 🛠️ Troubleshooting
 
-### "Resize/crop failed"
-- The script will fall back to original resolution
-- Check FFmpeg installation
+### Video loading issues
 
-### Videos are empty or not created
-- Ensure you have write permissions in the output directory
-- Check disk space
-- Review error messages in console output
+* Ensure FFmpeg is installed and in PATH
+* Check the downloaded video is not corrupted
 
-### Download fails
-- Check internet connection
-- Verify YouTube URL is valid
-- Some videos may be restricted or unavailable
+### Resize / crop fails
+
+* Script falls back to original resolution
+* Verify FFmpeg installation
+
+### Clips not saved
+
+* Check write permissions and disk space
+* Review console for errors
 
 ### Slow processing
-- Processing is CPU-intensive
-- Lower bitrate or resolution if needed
-- Consider processing specific parts only using `--parts`
 
-## Tips
+* Reduce bitrate or resolution
+* Process specific parts using `--parts`
 
-1. **Test with one part first**: Use `--parts 1` to test your setup before processing an entire video
+---
 
-2. **Resume processing**: If processing is interrupted, re-run the same command. Existing files will be skipped automatically.
+## 💡 Tips
 
-3. **Optimal clip duration**: 45-60 seconds works well for TikTok content
+1. Test with a single part: `--parts 1`
+2. Resume interrupted processing: existing clips are skipped automatically
+3. Optimal clip duration: 45–60 seconds for TikTok
+4. Thumbnails extracted at **1-second mark**
+5. Batch processing example:
 
-4. **Custom thumbnails**: Thumbnails are extracted from the 1-second mark of each clip
-
-5. **Batch processing**: Create a shell script to process multiple videos:
 ```bash
 #!/bin/bash
 python script.py --url "URL1" --clip-duration 60
 python script.py --url "URL2" --clip-duration 45
 ```
 
-## Requirements.txt
+---
+
+## 📦 Requirements.txt
 
 ```
 pytubefix>=6.0.0
@@ -205,21 +227,26 @@ pillow>=10.0.0
 python-slugify>=8.0.0
 ```
 
-## License
+---
 
-MIT License - Feel free to use and modify for your projects.
+## 📜 License
 
-## Disclaimer
+MIT License – free to use and modify.
 
-- Respect YouTube's Terms of Service
-- Only download content you have rights to use
-- Respect copyright and content creator rights
-- TikTok uploads should comply with TikTok's community guidelines
+---
 
-## Support
+## ⚠️ Disclaimer
 
-For issues and questions:
-1. Check FFmpeg installation: `ffmpeg -version`
-2. Verify Python packages: `pip list`
-3. Review error output in console
-4. Check file permissions in output directory
+* Respect YouTube’s Terms of Service
+* Only download content you have rights to use
+* TikTok uploads must comply with community guidelines
+
+---
+
+## 🆘 Support
+
+* Check FFmpeg: `ffmpeg -version`
+* Verify Python packages: `pip list`
+* Inspect console output for errors
+* Check file permissions in output folder
+
