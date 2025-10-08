@@ -1,40 +1,229 @@
 import os
 import json
-import argparse
+import subprocess
 from datetime import datetime
+from PIL import Image, ImageDraw, ImageFont
+import numpy as np
 
 from pytubefix import YouTube
 from moviepy.editor import VideoFileClip, ImageClip, CompositeVideoClip
-from tqdm import tqdm
-from PIL import Image
-from slugify import slugify  # safe filenames
+from slugify import slugify
 from tiktok_upload import upload_to_tiktok  # optional
 
-# Load config
-with open("config.json", "r") as f:
-    CONFIG = json.load(f)
 
+# ─────────────────────────────────────────────
+# Load config
+# ─────────────────────────────────────────────
+CONFIG_PATH = "config.json"
+if os.path.exists(CONFIG_PATH):
+    with open(CONFIG_PATH, "r") as f:
+        CONFIG = json.load(f)
+else:
+    CONFIG = {"clip_duration": 60}
+
+
+# ─────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────
 def create_output_folder(title):
     safe_title = slugify(title)
     folder = os.path.join(os.getcwd(), f"{safe_title}_{datetime.now():%Y%m%d_%H%M}")
     os.makedirs(folder, exist_ok=True)
-    print(f"📁 Output folder: {folder}")
+    print(f"📁 Output folder created: {folder}")
     return folder
 
-def download_video(url, resolution="720p"):
+
+# ─────────────────────────────────────────────
+# Download highest-quality video + audio
+# ─────────────────────────────────────────────
+def download_video(url, custom_title=None):
+    print(f"\n🔗 Fetching YouTube video: {url}")
     yt = YouTube(url)
-    print(f"🎬 Downloading: {yt.title}")
+    print(f"🎬 Found video: {yt.title}")
 
-    stream = yt.streams.filter(progressive=True, file_extension='mp4', res=resolution).first()
-    if not stream:
-        stream = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc().first()
+    title = custom_title or yt.title
+    safe_title = slugify(title)
+    output_path = os.path.abspath(f"{safe_title}.mp4")
 
-    out_file = os.path.abspath(stream.download())
-    print(f"✅ Download complete: {out_file}")
-    return yt.title, out_file
+    # Skip re-download if video exists
+    if os.path.exists(output_path) and os.path.getsize(output_path) > 10 * 1024 * 1024:
+        print(f"⚡ Found existing file: {output_path}")
+        return title, output_path
 
-def process_video(title, filepath, clip_duration, output_folder, logo_path="logo.png", selected_parts=None):
-    """Split video into clips, resize to vertical, add watermark, save thumbnails"""
+    print(f"⬇️ Downloading new copy of '{yt.title}' ...")
+
+    video_stream = (
+        yt.streams.filter(adaptive=True, type="video", file_extension="mp4")
+        .order_by("resolution")
+        .desc()
+        .first()
+    )
+    audio_stream = (
+        yt.streams.filter(adaptive=True, type="audio", file_extension="mp4")
+        .order_by("abr")
+        .desc()
+        .first()
+    )
+
+    if not video_stream or not audio_stream:
+        raise Exception("❌ No adaptive streams found — try another video.")
+
+    print("🎥 Downloading video stream...")
+    video_path = video_stream.download(filename="video_temp.mp4")
+
+    print("🎧 Downloading audio stream...")
+    audio_path = audio_stream.download(filename="audio_temp.mp4")
+
+    print("🛠️ Merging video + audio using ffmpeg...")
+    cmd = f'ffmpeg -y -i "{video_path}" -i "{audio_path}" -c:v copy -c:a aac "{output_path}" -loglevel error'
+    subprocess.run(cmd, shell=True, check=True)
+
+    os.remove(video_path)
+    os.remove(audio_path)
+
+    print(f"✅ Download complete: {output_path}")
+    return title, output_path
+
+
+# ─────────────────────────────────────────────
+# Save clip safely (non-blocking)
+# ─────────────────────────────────────────────
+def save_clip(clip, output_path):
+    print(f"💾 Saving clip → {output_path}")
+    try:
+        clip.write_videofile(
+            output_path,
+            codec="libx264",
+            audio_codec="aac",
+            bitrate="8000k",
+            fps=30,
+            preset="ultrafast",
+            threads=1,  # ⚠️ critical on Windows
+            temp_audiofile=os.path.join(os.path.dirname(output_path), "temp_audio.m4a"),
+            remove_temp=True,
+            verbose=True,
+            logger="bar",  # show progress
+        )
+        print(f"✅ Saved successfully: {output_path}")
+    except Exception as e:
+        print(f"❌ Error saving clip: {e}")
+
+
+# ─────────────────────────────────────────────
+# Add overlays (logo, title, part text)
+# ─────────────────────────────────────────────
+def add_overlays(clip, title, part_num=None, logo_path="logo.png"):
+    print("🎨 Adding overlays (logo + text)...")
+    layers = [clip]
+
+    # ───── Logo ─────
+    if os.path.exists(logo_path):
+        try:
+            print("🖼️ Adding logo overlay...")
+            logo = (
+                ImageClip(logo_path)
+                .set_duration(clip.duration)
+                .resize(height=240)  # 2x bigger
+                .set_position(("left", "top"))
+                .margin(left=40, top=40, opacity=0)
+            )
+            layers.append(logo)
+        except Exception as e:
+            print(f"⚠️ Logo overlay failed: {e}")
+    else:
+        print("⚠️ Logo not found, skipping overlay.")
+
+    # ───── Text Overlay (via PIL) ─────
+    try:
+        text_content = title
+        if part_num:
+            text_content += f" — Part {part_num}"
+
+        width = int(round(clip.w))
+        height = 200
+
+        img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+
+        try:
+            font = ImageFont.truetype("arial.ttf", 70)
+        except:
+            font = ImageFont.load_default()
+
+        bbox = draw.textbbox((0, 0), text_content, font=font)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
+        x = max(int((width - text_w) / 2), 0)
+        y = max(int((height - text_h) / 2), 0)
+
+        # translucent background bar
+        rect_y = max(y - 20, 0)
+        draw.rectangle(
+            [(0, rect_y), (width, rect_y + text_h + 40)],
+            fill=(0, 0, 0, 120)
+        )
+
+        # outline text
+        outline = 2
+        for dx in [-outline, 0, outline]:
+            for dy in [-outline, 0, outline]:
+                if dx != 0 or dy != 0:
+                    draw.text((x + dx, y + dy), text_content, font=font, fill="black")
+
+        draw.text((x, y), text_content, font=font, fill="white")
+
+        frame = np.array(img).astype("uint8")
+        if len(frame.shape) != 3 or frame.shape[2] != 4:
+            raise ValueError(f"Invalid frame shape: {frame.shape}")
+
+        txt_clip = (
+            ImageClip(frame)
+            .set_duration(clip.duration)
+            .set_position(("center", "bottom"))
+            .margin(bottom=40)
+        )
+        layers.append(txt_clip)
+        print("✅ Text overlay added.")
+    except Exception as e:
+        print(f"⚠️ PIL text overlay failed: {e}")
+
+    return CompositeVideoClip(layers)
+
+
+# ─────────────────────────────────────────────
+# Extract highlight only
+# ─────────────────────────────────────────────
+def extract_highlight(title, filepath, output_folder, logo_path="logo.png"):
+    print("\n✨ Extracting highlight clip...")
+    try:
+        video = VideoFileClip(filepath)
+        mid = video.duration / 2
+        start = max(0, mid - 7.5)
+        end = min(video.duration, start + 15)
+        print(f"🎯 Highlight range: {start:.2f}s → {end:.2f}s")
+
+        clip = video.subclip(start, end)
+        final_clip = add_overlays(clip, title, 1, logo_path)
+
+        highlight_path = os.path.join(output_folder, "highlight.mp4")
+        save_clip(final_clip, highlight_path)
+
+        clip.close()
+        final_clip.close()
+        video.close()
+
+        print(f"✅ Highlight saved: {highlight_path}")
+        return {"highlight": highlight_path}
+    except Exception as e:
+        print(f"❌ Failed to extract highlight: {e}")
+        return None
+
+
+# ─────────────────────────────────────────────
+# Process full video into multiple parts
+# ─────────────────────────────────────────────
+def process_video(title, filepath, clip_duration, output_folder, logo_path="logo.png", parts_to_process=None):
+    print("\n🎬 Loading video for splitting...")
     try:
         video = VideoFileClip(filepath)
     except Exception as e:
@@ -43,149 +232,73 @@ def process_video(title, filepath, clip_duration, output_folder, logo_path="logo
 
     total_duration = int(video.duration)
     num_parts = (total_duration // clip_duration) + (1 if total_duration % clip_duration else 0)
-    summary = {"title": title, "total_parts": num_parts, "duration": total_duration, "clips": []}
+    print(f"📼 Splitting into {num_parts} parts of {clip_duration}s each (Total duration: {total_duration}s)\n")
 
-    print(f"📼 Splitting into {num_parts} parts of {clip_duration}s each...\n")
+    summary = {"title": title, "total_parts": num_parts, "clips": []}
+    parts_to_process = parts_to_process or list(range(1, num_parts + 1))
 
-    # Determine which parts to process
-    if selected_parts:
-        parts_to_process = [p for p in selected_parts if 1 <= p <= num_parts]
-    else:
-        parts_to_process = range(1, num_parts + 1)
-
-    for i in tqdm(parts_to_process, desc="Processing parts"):
+    for i in parts_to_process:
+        print(f"\n▶️ Processing part {i}/{len(parts_to_process)}")
         start = (i - 1) * clip_duration
         end = min(i * clip_duration, total_duration)
         output_filename = os.path.join(output_folder, f"part_{i}.mp4")
 
-        # Check if file already exists (without Windows prefix for checking)
         if os.path.exists(output_filename):
-            print(f"⚠️ Skipping {output_filename} (already exists)")
+            print(f"⚠️ Part {i} already exists, skipping.")
             summary["clips"].append(output_filename)
             continue
 
         try:
-            # Create subclip from the original video
+            print(f"⏳ Extracting subclip from {start}s to {end}s ...")
             clip = video.subclip(start, end)
 
-            # Resize to vertical safely
-            try:
-                # Get original dimensions
-                orig_w, orig_h = clip.size
-                target_h = 1920
-                target_w = 1080
-                
-                # Calculate scaling to fill the target height
-                scale_factor = target_h / orig_h
-                new_w = int(orig_w * scale_factor)
-                
-                # Resize and crop to vertical format
-                clip = clip.resize(height=target_h)
-                if new_w > target_w:
-                    clip = clip.crop(x_center=clip.w / 2, width=target_w)
-                else:
-                    # If video is already narrow, just resize
-                    clip = clip.resize((target_w, target_h))
-                    
-            except Exception as e:
-                print(f"⚠️ Resize/crop failed for part {i}, using original resolution: {e}")
+            final_clip = add_overlays(clip, title, i, logo_path)
 
-            # Add watermark/logo if exists
-            if os.path.exists(logo_path):
-                try:
-                    logo = (ImageClip(logo_path)
-                            .set_duration(clip.duration)
-                            .resize(height=120)
-                            .set_position(("right", "bottom"))
-                            .margin(right=10, bottom=10, opacity=0))
-                    clip = CompositeVideoClip([clip, logo])
-                except Exception as e:
-                    print(f"⚠️ Logo overlay failed for part {i}: {e}")
+            print(f"💾 Rendering part {i} ...")
+            save_clip(final_clip, output_filename)
 
-            print(f"💾 Saving part {i} to {output_filename}")
-            
-            # Write video file with error handling
-            try:
-                clip.write_videofile(
-                    output_filename,
-                    codec="libx264",
-                    audio_codec="aac",
-                    bitrate="2000k",
-                    fps=30,
-                    preset='medium',
-                    threads=4,
-                    verbose=False,
-                    logger='bar'
-                )
-                
-                # Verify file was created
-                if not os.path.exists(output_filename):
-                    raise Exception(f"File was not created: {output_filename}")
-                
-                file_size = os.path.getsize(output_filename)
-                if file_size == 0:
-                    raise Exception(f"File is empty: {output_filename}")
-                    
-                print(f"✅ Part {i} saved successfully ({file_size / (1024*1024):.2f} MB)")
-                
-            except Exception as e:
-                print(f"❌ Failed to write video file for part {i}: {e}")
-                clip.close()
-                continue
-
-            # Save thumbnail
-            try:
-                frame = clip.get_frame(1)
-                thumb_path = os.path.join(output_folder, f"thumb_part_{i}.png")
-                Image.fromarray(frame).save(thumb_path)
-                print(f"🖼️ Thumbnail saved: {thumb_path}")
-            except Exception as e:
-                print(f"⚠️ Thumbnail generation failed for part {i}: {e}")
-
-            summary["clips"].append(output_filename)
             clip.close()
+            final_clip.close()
+            summary["clips"].append(output_filename)
 
         except Exception as e:
             print(f"❌ Failed to process part {i}: {e}")
-            import traceback
-            traceback.print_exc()
-            continue
 
     video.close()
-
-    # Save summary JSON
-    summary_path = os.path.join(output_folder, "summary.json")
-    with open(summary_path, "w") as f:
+    with open(os.path.join(output_folder, "summary.json"), "w") as f:
         json.dump(summary, f, indent=2)
 
     print(f"\n✅ Done! {len(summary['clips'])} parts saved in {output_folder}")
-    print(f"🧾 Summary file: {summary_path}")
     return summary
 
-def main():
-    parser = argparse.ArgumentParser(description="YouTube → TikTok Clips Creator")
-    parser.add_argument("--url", required=True, help="YouTube video URL")
-    parser.add_argument("--clip-duration", type=int, default=CONFIG["clip_duration"], help="Clip length in seconds")
-    parser.add_argument("--upload-tiktok", action="store_true", help="Upload clips to TikTok after rendering")
-    parser.add_argument("--parts", type=int, nargs="+", help="List of part numbers to process (e.g., 1 2 3)")
-    args = parser.parse_args()
 
-    title, video_path = download_video(args.url)
+# ─────────────────────────────────────────────
+# Main Interactive Flow
+# ─────────────────────────────────────────────
+def main():
+    print("🎬 YouTube → TikTok Clip Maker")
+
+    url = input("🔗 Enter YouTube URL: ").strip()
+    title = input("📝 Enter custom title: ").strip()
+    clip_duration = input(f"⏱️ Enter clip duration (seconds, default={CONFIG['clip_duration']}): ").strip()
+    clip_duration = int(clip_duration) if clip_duration else CONFIG["clip_duration"]
+
+    mode = input("🎯 Enter 'h' for highlight, or number of parts (press Enter for full split): ").strip()
+
+    title, video_path = download_video(url, custom_title=title)
     output_folder = create_output_folder(title)
 
-    summary = process_video(title, video_path, args.clip_duration, output_folder, selected_parts=args.parts)
+    if mode.lower() in ["h", "highlight"]:
+        summary = extract_highlight(title, video_path, output_folder)
+    else:
+        parts = None
+        if mode.isdigit():
+            total = int(mode)
+            parts = list(range(1, total + 1))
+        summary = process_video(title, video_path, clip_duration, output_folder, parts_to_process=parts)
 
-    if args.upload_tiktok and summary:
-        for clip_file in summary["clips"]:
-            if os.path.exists(clip_file):
-                print(f"🚀 Uploading {clip_file} to TikTok...")
-                try:
-                    upload_to_tiktok(clip_file)
-                except Exception as e:
-                    print(f"⚠️ TikTok upload failed for {clip_file}: {e}")
-            else:
-                print(f"⚠️ Skipping upload, file not found: {clip_file}")
-        print("✅ All clips uploaded!")
+    print("\n🚀 All done! ✅")
+
 
 if __name__ == "__main__":
     main()
