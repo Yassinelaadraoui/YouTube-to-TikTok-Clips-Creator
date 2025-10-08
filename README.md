@@ -1,6 +1,6 @@
 
 
-````markdown
+---
 # 🎬 YouTube → TikTok Clip Maker
 
 A **Python automation script** that turns long YouTube videos into **short clips** ready for **TikTok, Instagram Reels, or YouTube Shorts** — with custom titles, logo overlays, and optional highlight extraction.
