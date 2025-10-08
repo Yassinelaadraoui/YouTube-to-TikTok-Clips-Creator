@@ -1,7 +1,18 @@
 {
   "clip_duration": 90,
-  "font_size": 60,
+  "font": "arial.ttf",
+  "font_size": 50,
   "font_color": "white",
-  "stroke_color": "black",
-  "output_resolution": "1080p"
+  "font_outline": 2,
+  "bitrate": "8000k",
+  "fps": 30,
+  "preset": "ultrafast",
+  "threads": 1,
+  "logo_path": "logo.png",
+  "logo_height": 100,
+  "scene_detect": false,
+  "scene_threshold": 0.3,
+  "parallel_renders": 2,
+  "vertical_format": true,     
+  "vertical_resolution": 1080 
 }
